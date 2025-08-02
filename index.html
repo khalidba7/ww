@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>القادحات لمزاد الخيل</title>
+<style>
+body { font-family: Arial, sans-serif; background: black; color: white; text-align: center; margin: 0; }
+h1,h2,h3 { color: gold; }
+.button { background: gold; border: none; color: black; padding: 10px 20px; margin: 10px; border-radius: 8px; cursor: pointer; }
+.section { display: none; padding: 20px; }
+input, textarea { width: 80%; padding: 8px; margin: 5px; border-radius: 5px; }
+.horse-card { background: #222; border: 2px solid gold; border-radius: 8px; padding: 10px; width: 90%; margin: 15px auto; }
+.horse-card img { max-width: 100%; border-radius: 5px; }
+a.show-more { display: inline-block; margin-top: 10px; padding: 8px 15px; background: gold; color: black; border-radius: 5px; text-decoration: none; }
+a.show-more:hover { background: #d4af37; }
+
+/* Popup */
+.popup { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); justify-content: center; align-items: center; flex-direction: column; overflow-y: auto; }
+.popup img { max-width: 90%; margin: 10px; border-radius: 5px; }
+.close-btn { background: gold; color: black; padding: 10px 20px; border-radius: 5px; margin: 10px; cursor: pointer; }
+.close-btn:hover { background: #d4af37; }
+</style>
+</head>
+<body>
+
+<!-- تسجيل -->
+<div id="register" class="section" style="display:block;">
+  <h1>القادحات لمزاد الخيل</h1>
+  <input type="text" id="regName" placeholder="الاسم"><br>
+  <input type="email" id="regEmail" placeholder="البريد الإلكتروني"><br>
+  <input type="tel" id="regPhone" placeholder="رقم الجوال"><br>
+  <label><input type="checkbox" id="regTerms"> أوافق على الشروط</label><br>
+  <button class="button" onclick="goToMainMenu()">تسجيل</button>
+</div>
+
+<!-- خيارات -->
+<div id="mainmenu" class="section">
+  <h2 id="welcome"></h2>
+  <button class="button" onclick="showSection('addhorse')">إضافة خيل</button>
+  <button class="button" onclick="showSection('auction')">دخول المزاد</button>
+</div>
+
+<!-- إضافة خيل -->
+<div id="addhorse" class="section">
+  <h2>إضافة خيل</h2>
+  <input type="text" id="horseName" placeholder="اسم الحصان"><br>
+  <input type="text" id="horseAge" placeholder="العمر"><br>
+  <textarea id="horseHealth" placeholder="الحالة الصحية"></textarea><br>
+  <label>الصورة الرئيسية:</label><br>
+  <input type="file" id="horseMainImage" accept="image/*"><br>
+  <label>صور إضافية:</label><br>
+  <input type="file" id="horseExtraImages" accept="image/*" multiple><br>
+  <label>فيديو (اختياري):</label><br>
+  <input type="file" id="horseVideo" accept="video/*"><br>
+  <button class="button" onclick="saveHorse()">حفظ</button>
+  <button class="button" onclick="showSection('mainmenu')">رجوع</button>
+</div>
+
+<!-- المزاد -->
+<div id="auction" class="section">
+  <h2>المزاد</h2>
+  <div id="auctionList"></div>
+  <button class="button" onclick="showSection('mainmenu')">رجوع</button>
+</div>
+
+<!-- Popup لعرض باقي الصور -->
+<div class="popup" id="popup">
+  <div id="popupImages"></div>
+  <button class="close-btn" onclick="closePopup()">إغلاق</button>
+</div>
+
+<script>
+let horses = JSON.parse(localStorage.getItem('horses') || '[]');
+let bidderName = localStorage.getItem('bidderName') || "";
+
+function showSection(id) {
+  document.querySelectorAll('.section').forEach(sec => sec.style.display = 'none');
+  document.getElementById(id).style.display = 'block';
+  if (id === 'auction') renderAuction();
+}
+
+function goToMainMenu() {
+  const name = document.getElementById('regName').value.trim();
+  const email = document.getElementById('regEmail').value.trim();
+  const phone = document.getElementById('regPhone').value.trim();
+  const terms = document.getElementById('regTerms').checked;
+  if (!name || !email || !phone || !terms) {
+    alert('يرجى إدخال جميع البيانات والموافقة على الشروط');
+    return;
+  }
+  bidderName = name;
+  localStorage.setItem('bidderName', name);
+  document.getElementById('welcome').innerText = مرحباً ${name} في القادحات لمزاد الخيل;
+  showSection('mainmenu');
+}
+
+function saveHorse() {
+  const name = document.getElementById('horseName').value.trim();
+  const age = document.getElementById('horseAge').value.trim();
+  const health = document.getElementById('horseHealth').value.trim();
+  const mainImageFile = document.getElementById('horseMainImage').files[0];
+  const extraImagesFiles = document.getElementById('horseExtraImages').files;
+  const videoFile = document.getElementById('horseVideo').files[0];
+
+  if (!name || !age || !health || !mainImageFile) {
+    alert('يرجى إدخال جميع البيانات المطلوبة');
+    return;
+  }
+
+  const readerMain = new FileReader();
+  readerMain.onload = function() {
+    let horse = {
+      name, age, health,
+      mainImage: readerMain.result,
+      extraImages: [],
+      video: null,
+      price: 0,
+      lastBidder: ""
+    };
+
+    if (extraImagesFiles.length > 0) {
+      let loadedCount = 0;
+      for (let i = 0; i < extraImagesFiles.length; i++) {
+        const readerExtra = new FileReader();
+        readerExtra.onload = function() {
+          horse.extraImages.push(readerExtra.result);
+          loadedCount++;
+          if (loadedCount === extraImagesFiles.length) finishSave();
+        };
+        readerExtra.readAsDataURL(extraImagesFiles[i]);
+      }
+    } else {
+      finishSave();
+    }
+
+    function finishSave() {
+      if (videoFile) {
+        const readerVideo = new FileReader();
+        readerVideo.onload = function() {
+          horse.video = readerVideo.result;
+          horses.push(horse);
+          localStorage.setItem('horses', JSON.stringify(horses));
+          alert('تم حفظ الحصان بنجاح');
+          showSection('mainmenu');
+        };
+        readerVideo.readAsDataURL(videoFile);
+      } else {
+        horses.push(horse);
+        localStorage.setItem('horses', JSON.stringify(horses));
+        alert('تم حفظ الحصان بنجاح');
+        showSection('mainmenu');
+      }
+    }
+  };
+  readerMain.readAsDataURL(mainImageFile);
+}
+
+function renderAuction() {
+  const list = document.getElementById('auctionList');
+  list.innerHTML = '';
+  horses.forEach((horse, index) => {
+    const card = document.createElement('div');
+    card.className = 'horse-card';
+    card.innerHTML = `
+      <h3>${horse.name}</h3>
+      <p>العمر: ${horse.age}</p>
+      <p>الحالة الصحية: ${horse.health}</p>
+      <img src="${horse.mainImage}" alt="حصان">
+      <br>
+      ${horse.extraImages.length > 0 ? <a href="#" class="show-more" onclick="openPopup(${index})">عرض باقي الصور</a> : ''}
+      <p>السعر الحالي: ${horse.price} ريال</p>
+      <p>آخر مزايد: ${horse.lastBidder || '---'}</p>
+      <input type="number" id="bid-${index}" placeholder="أدخل مبلغ المزايدة">
+      <button class="button" onclick="placeBid(${index})">مزايدة</button>
+    `;
+    list.appendChild(card);
+  });
+}
+
+function placeBid(index) {
+  const bidValue = parseInt(document.getElementById(bid-${index}).value);
+  if (isNaN(bidValue) || bidValue <= horses[index].price) {
+    alert('يجب أن يكون المبلغ أكبر من السعر الحالي');
+    return;
+  }
+  horses[index].price = bidValue;
+  horses[index].lastBidder = bidderName;
+  localStorage.setItem('horses', JSON.stringify(horses));
+  alert('✅ تمت المزايدة بنجاح');
+  renderAuction();
+}
+
+function openPopup(index) {
+  const popup = document.getElementById('popup');
+  const popupImages = document.getElementById('popupImages');
+  popupImages.innerHTML = '';
+  horses[index].extraImages.forEach(img => {
+    const imageElem = document.createElement('img');
+    imageElem.src = img;
+    popupImages.appendChild(imageElem);
+  });
+  popup.style.display = 'flex';
+}
+
+function closePopup() {
+  document.getElementById('popup').style.display = 'none';
+}
+</script>
+
+</body>
+</html>
